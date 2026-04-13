@@ -13,6 +13,8 @@ load_dotenv()
 from docubot import DocuBot
 from llm_client import GeminiClient
 from dataset import SAMPLE_QUERIES
+from pipeline_models import UserQuery
+from rag_pipeline import run_rag_pipeline
 
 
 def try_create_llm_client():
@@ -111,7 +113,8 @@ def run_retrieval_only_mode(bot):
 def run_rag_mode(bot, has_llm):
     """
     Mode 3:
-    Retrieval plus LLM generation.
+    Retrieval plus LLM generation, with explicit pipeline stages:
+    retrieve context → draft answer (Gemini) → validate (placeholder for now).
     """
     if not has_llm or bot.llm_client is None:
         print("\nRAG mode is not available (no GEMINI_API_KEY).\n")
@@ -123,7 +126,9 @@ def run_rag_mode(bot, has_llm):
     for query in queries:
         print("=" * 60)
         print(f"Question: {query}\n")
-        answer = bot.answer_rag(query)
+        user_query = UserQuery(text=query)
+        # Draft generation and validation (stub) run inside the pipeline; see rag_pipeline.py.
+        answer = run_rag_pipeline(bot, user_query)
         print("Answer:")
         print(answer)
         print()

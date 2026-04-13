@@ -319,18 +319,14 @@ class DocuBot:
         Phase 2 RAG mode.
         Uses student retrieval to select snippets, then asks Gemini
         to generate an answer using only those snippets.
+
+        Orchestration (draft + placeholder validation + logging) lives in
+        ``rag_pipeline.run_rag_pipeline``.
         """
-        if self.llm_client is None:
-            raise RuntimeError(
-                "RAG mode requires an LLM client. Provide a GeminiClient instance."
-            )
+        from pipeline_models import UserQuery
+        from rag_pipeline import run_rag_pipeline
 
-        snippets = self.retrieve(query, top_k=top_k)
-
-        if not snippets:
-            return "I do not know based on these docs."
-
-        return self.llm_client.answer_from_snippets(query, snippets)
+        return run_rag_pipeline(self, UserQuery(text=query, top_k=top_k))
 
     # -----------------------------------------------------------
     # Bonus Helper: concatenated docs for naive generation mode
