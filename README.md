@@ -18,6 +18,10 @@ This repository now ships an **upgraded DocuBot** that adds an **agentic validat
 
 ## Architecture Overview
 
+<p align="center">
+  <img src="Assets/image.png" alt="DocuBot pipeline diagram" width="720" />
+</p>
+
 End-to-end RAG in this project follows a **linear pipeline** (you can add a diagram image here later):
 
 1. **Lexical retrieval** — The query is tokenized and scored against indexed chunks; top snippets are chosen with guardrails (e.g., evidence thresholds, one strong chunk per file where applicable). Output: a structured **`RetrievedContext`** (list of filename + snippet pairs).
@@ -108,8 +112,6 @@ _Paste 2–3 real transcripts below after you run the CLI (inputs and model outp
 
 ### Example 1 — Successful RAG answer (validator passed)
 
-**[TODO: Paste your question and final answer here.]**
-
 ```text
 Question:
 Where is the auth token generated?
@@ -119,8 +121,6 @@ Tokens are created by the `generate_access_token` function in the `auth_utils.py
 ```
 
 ### Example 2 — Caught hallucination or failed validation (fallback or retry path)
-
-**[TODO: Paste a case where validation failed or the system refused.]**
 
 ```text
 Question:
@@ -132,17 +132,6 @@ I do not know based on these docs.
 
 ```
 
-### Example 3 — (Optional) Retrieval-only or “I do not know”
-
-**[TODO: Optional third example.]**
-
-```text
-Question:
-<your question>
-
-Output:
-<DocuBot output>
-```
 
 ## Design Decisions
 
