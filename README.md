@@ -178,3 +178,29 @@ To run the suite locally:
 ```bash
 python -m pytest tests/test_rag_validation.py -v
 ```
+
+---
+
+## System Limitations and Biases
+
+While the agentic validation loop significantly reduces hallucinations, DocuBot is still limited by its **initial lexical retrieval** system. Because it relies on **exact keyword matching** rather than dense vector embeddings, it can **completely miss** relevant documents if the user asks a question using **synonyms** (for example, asking about “signing in” when the docs say “authentication”).
+
+Furthermore, the **validator LLM** inherently biases toward **caution**: if a retrieved snippet is ambiguous, the system will **aggressively refuse** to answer rather than risk being wrong.
+
+## Potential Misuse and Prevention
+
+In a **production** environment, developers might **over-trust** the AI’s output regarding sensitive operations, such as **database migrations** or **authentication** flows. If the AI subtly misrepresents a **security configuration**, a developer could introduce **vulnerabilities** into the codebase.
+
+To reduce that risk, the primary guardrails are the strict **snippets-only** validation prompt and the hardcoded refusal (**`I do not know based on these docs.`**). The system is designed to **fail closed** (withholding a confident-looking guess) rather than **fail open** (inventing details).
+
+## Surprises During Reliability Testing
+
+The most surprising discovery during testing was how often the **draft generator** LLM would try to be **overly helpful** by inventing **plausible-sounding file names** for API endpoints, even when explicitly told not to. Without the secondary **validator** LLM acting as an **adversarial** check, the system would have routinely passed these **subtle hallucinations** to the user.
+
+## Collaboration with AI
+
+I utilized **Cursor** and the **Gemini** model to architect and implement this system upgrade.
+
+- **Helpful suggestion:** The AI was incredibly helpful writing the **`pytest`** suite—in particular setting up **`unittest.mock`** to simulate LLM responses. That made it possible to exercise the validation loop’s logic **repeatedly** without burning through API credits.
+
+- **Flawed suggestion:** At one point, the AI suggested **rewriting the entire lexical retrieval system** to use **semantic embeddings** via an external library. While that can be a reasonable **future** upgrade, it was **out of scope** for this work (which focused on the agentic loop and reliability) and would have **broken** the intentional design of the base project. I rejected that direction and steered the work back to the **self-critique loop** instead.
