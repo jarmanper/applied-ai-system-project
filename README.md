@@ -112,10 +112,10 @@ _Paste 2–3 real transcripts below after you run the CLI (inputs and model outp
 
 ```text
 Question:
-<your question>
+Where is the auth token generated?
 
 Answer:
-<DocuBot output>
+Tokens are created by the `generate_access_token` function in the `auth_utils.py` module; it takes a user ID and returns a signed JWT. Signing uses the `AUTH_SECRET_KEY` environment variable (see AUTH.md). I relied on AUTH.md for this.
 ```
 
 ### Example 2 — Caught hallucination or failed validation (fallback or retry path)
@@ -124,10 +124,12 @@ Answer:
 
 ```text
 Question:
-<your question>
+Is there any mention of payment processing in these docs?
+
 
 Answer:
-<DocuBot output>
+I do not know based on these docs.
+
 ```
 
 ### Example 3 — (Optional) Retrieval-only or “I do not know”
@@ -204,3 +206,4 @@ I utilized **Cursor** and the **Gemini** model to architect and implement this s
 - **Helpful suggestion:** The AI was incredibly helpful writing the **`pytest`** suite—in particular setting up **`unittest.mock`** to simulate LLM responses. That made it possible to exercise the validation loop’s logic **repeatedly** without burning through API credits.
 
 - **Flawed suggestion:** At one point, the AI suggested **rewriting the entire lexical retrieval system** to use **semantic embeddings** via an external library. While that can be a reasonable **future** upgrade, it was **out of scope** for this work (which focused on the agentic loop and reliability) and would have **broken** the intentional design of the base project. I rejected that direction and steered the work back to the **self-critique loop** instead.
+
