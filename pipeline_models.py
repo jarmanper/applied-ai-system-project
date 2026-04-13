@@ -1,8 +1,8 @@
 """
 Structured types for the DocuBot RAG pipeline (retrieval → draft → validation).
 
-Validation fields are populated by a future LLM validator; the live pipeline
-currently uses a placeholder that always passes.
+``ValidationResult`` is produced by the Gemini validator plus system guardrails
+on minimum confidence.
 """
 
 from __future__ import annotations
