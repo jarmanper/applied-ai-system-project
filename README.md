@@ -1,100 +1,180 @@
-## Reflection (TA prep)
+# DocuBot: RAG with Agentic Validation and Grounding Checks
 
-*Notes from running through the project before students.*
+## Original Project Summary
 
-**Core concept students needed to understand:**  
-I want them to leave knowing that documentation Q&A is not "just ask the model." **Context is engineered:** naive mode dumps the **entire** corpus (cost, limits, noise); retrieval-only shows **which evidence** the system would surface without generation; RAG pairs **targeted snippets** with Gemini so answers are easier to check against sources. I'll push them to connect **retrieval choices** (chunking, scoring, stopwords, top-k in [docubot.py](docubot.py)) to **answer quality**, and to treat a clean **"I do not know"** as a win when the docs do not support a claim.
+**DocuBot** is a small, Python-first documentation assistant. Its **original** goal was to help developers answer questions about a project by:
 
-**Where students may struggle:**  
-I'm expecting friction when the **top chunk looks wrong** but scores high (token overlap vs real relevance), when they tune **chunk boundaries** or **scoring** and accidentally break behaviors like **one chunk per file**, and when **fluent model output** hides a **retrieval** mistake. I'll flag that [evaluation.py](evaluation.py) is a **coarse** sanity check, not ground truth. On my prep run I'll double-check **`.env` / `GEMINI_API_KEY`** so "mode 1 vs 3" issues in lab are not silently **missing-key** problems.
+- Loading **local Markdown (and plain text) files** from a `docs/` directory
+- Building a **hand-rolled lexical index** (token-based inverted index and keyword scoring—not a vector database)
+- Supporting three ways to answer: **naive full-corpus LLM**, **retrieval-only** (snippets, no model), and **basic RAG** (retrieve top snippets, then ask the model to answer using only that context)
 
-**Where AI was helpful vs misleading:**  
-It was useful for me to **sanity-check** RAG vs full-context tradeoffs, brainstorm **test queries**, and reason about **precision/recall** in this intentionally minimal setup. It steered wrong when it suggested **vector DBs / big frameworks** that skip the point of the hand-built indexer, or when it implied **prompt tweaks alone** fix bad top-k without walking the **retrieval trace** first.
+That design keeps the system transparent: you can see **which text** reached the model and reason about retrieval quality without extra infrastructure.
 
-**One way you'd guide a student without giving the answer:**  
-I'd have them pick **one query**, run **all three modes** on the same docs, and write down **what text reached the model** each time. Then we'd walk **which files and chunks** ranked and **which query tokens** drove the score, form one **hypothesis** (synonym gap, chunk split, scoring guardrail), and change **a single knob** in [docubot.py](docubot.py) or [llm_client.py](llm_client.py) before re-running.
+## Title and Summary
 
----
+This repository now ships an **upgraded DocuBot** that adds an **agentic validation loop** after draft generation. A **second Gemini call** (the validator) scores how well the draft is supported by the **same retrieved snippets**, returns a **confidence score** between **0.0** and **1.0**, and a **pass/fail** judgment. System guardrails enforce a **minimum confidence** threshold so borderline answers are not shown blindly.
 
-# DocuBot
+**Why this matters for developer trust:** fluent LLM answers can **sound** authoritative while **misstating** APIs, env vars, or behavior. By validating the draft **against the evidence actually retrieved**, DocuBot can **withhold** a bad answer and fall back to a clear refusal string—reducing silent hallucinations and making it easier to align answers with **checkable** documentation.
 
-DocuBot is a small documentation assistant that helps answer developer questions about a codebase.  
-It can operate in three different modes:
+## Architecture Overview
 
-1. **Naive LLM mode**  
-   Sends the entire documentation corpus to a Gemini model and asks it to answer the question.
+End-to-end RAG in this project follows a **linear pipeline** (you can add a diagram image here later):
 
-2. **Retrieval only mode**  
-   Uses a simple indexing and scoring system to retrieve relevant snippets without calling an LLM.
+1. **Lexical retrieval** — The query is tokenized and scored against indexed chunks; top snippets are chosen with guardrails (e.g., evidence thresholds, one strong chunk per file where applicable). Output: a structured **`RetrievedContext`** (list of filename + snippet pairs).
 
-3. **RAG mode (Retrieval Augmented Generation)**  
-   Retrieves relevant snippets, then asks Gemini to answer using only those snippets.
+2. **Draft generation** — **Gemini** produces an initial answer using **only** those snippets (`DraftAnswer`). This is the fastest path to a candidate response but is **not** trusted as final until validated.
 
-The docs folder contains realistic developer documents (API reference, authentication notes, database notes), but these files are **just text**. They support retrieval experiments and do not require students to set up any backend systems.
+3. **Agentic validation** — A **separate** Gemini prompt treats the snippets as ground truth, checks the draft for contradictions and unsupported claims, and returns **`ValidationResult`** (`passed`, `confidence_score`, `reasoning`). Code also enforces **`RAG_VALIDATION_MIN_CONFIDENCE`** (configurable via environment variable).
 
----
+4. **Final output / fallback** — If validation **passes**, the user sees the draft. If it **fails**, the system may run **one** snippet-conditioned **retry** draft; if validation still fails, the user sees exactly: **`I do not know based on these docs.`** Each run can be audited via append-only JSONL logs under `logs/rag_interactions.jsonl`.
 
-## Setup
+Key modules: `docubot.py` (retrieval), `rag_pipeline.py` (orchestration), `llm_client.py` (draft + validator + retry prompts), `pipeline_models.py` (typed pipeline state), `rag_logger.py` (structured logging).
 
-### 1. Install Python dependencies
+## Setup Instructions
 
-    pip install -r requirements.txt
+Follow these steps in order from a terminal in the **project root** (the folder that contains `main.py` and `requirements.txt`).
 
-### 2. Configure environment variables
+### 1. Prerequisites
 
-Copy the example file:
+- **Python 3.9+** installed and available as `python` (on some systems, use `py` or `python3`).
+- A **Google AI (Gemini) API key** if you want modes that call the model (naive LLM and RAG). Retrieval-only mode does not need a key.
 
-    cp .env.example .env
+### 2. Create and activate a virtual environment (recommended)
 
-Then edit `.env` to include your Gemini API key:
+**Windows (PowerShell):**
 
-    GEMINI_API_KEY=your_api_key_here
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
 
-If you do not set a Gemini key, you can still run retrieval only mode.
+**macOS / Linux:**
 
----
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
 
-## Running DocuBot
+### 3. Install dependencies
 
-Start the program:
+```bash
+pip install -r requirements.txt
+```
 
-    python main.py
+This installs runtime libraries (including `google-generativeai`, `pydantic`, `python-dotenv`) and **pytest** for automated tests.
 
-Choose a mode:
+### 4. Configure `GEMINI_API_KEY`
 
-- **1**: Naive LLM (Gemini reads the full docs)  
-- **2**: Retrieval only (no LLM)  
-- **3**: RAG (retrieval + Gemini)
+1. In the **project root**, create a file named **`.env`** (same folder as `main.py`).
+2. Add a single line (replace the value with your real key):
 
-You can use built in sample queries or type your own.
+   ```env
+   GEMINI_API_KEY=your_actual_key_here
+   ```
 
----
+3. Save the file. **`main.py` loads `.env` automatically** via `python-dotenv`.
 
-## Running Retrieval Evaluation (optional)
+**Security notes:** Do not commit `.env` to git. The project `.gitignore` is set to ignore `.env` and the `logs/` directory (interaction logs).
 
-    python evaluation.py
+### 5. Format and maintain the `docs/` folder
 
-This prints simple retrieval hit rates for sample queries.
+- Put **project documentation** as **`.md`** or **`.txt`** files inside the **`docs/`** directory at the project root.
+- **Encoding:** UTF-8 is assumed when files are read.
+- **Chunking:** DocuBot splits files into paragraph-style chunks (blank-line boundaries) for retrieval; very long paragraphs may be split further internally.
+- **Filenames:** Use clear names (e.g., `API_REFERENCE.md`, `AUTH.md`); they appear in answers and logs as citation labels.
 
----
+If `docs/` is missing or empty, retrieval will have nothing to index; RAG will safely refuse when no snippets qualify.
 
-## Modifying the Project
+### 6. Run the interactive CLI
 
-You will primarily work in:
+```bash
+python main.py
+```
 
-- `docubot.py`  
-  Implement or improve the retrieval index, scoring, and snippet selection.
+- Choose **1** for naive LLM over the full corpus, **2** for retrieval-only, **3** for RAG with validation.
+- Press **Enter** to run built-in sample queries, or type **one custom query** when prompted.
 
-- `llm_client.py`  
-  Adjust the prompts and behavior of LLM responses.
+### 7. (Optional) Run retrieval evaluation
 
-- `dataset.py`  
-  Add or change sample queries for testing.
+```bash
+python evaluation.py
+```
 
----
+Prints a simple retrieval hit-rate report for sample queries.
 
-## Requirements
+## Sample Interactions
 
-- Python 3.9+
-- A Gemini API key for LLM features (only needed for modes 1 and 3)
-- No database, no server setup, no external services besides LLM calls
+_Paste 2–3 real transcripts below after you run the CLI (inputs and model outputs)._
+
+### Example 1 — Successful RAG answer (validator passed)
+
+**[TODO: Paste your question and final answer here.]**
+
+```text
+Question:
+<your question>
+
+Answer:
+<DocuBot output>
+```
+
+### Example 2 — Caught hallucination or failed validation (fallback or retry path)
+
+**[TODO: Paste a case where validation failed or the system refused.]**
+
+```text
+Question:
+<your question>
+
+Answer:
+<DocuBot output>
+```
+
+### Example 3 — (Optional) Retrieval-only or “I do not know”
+
+**[TODO: Optional third example.]**
+
+```text
+Question:
+<your question>
+
+Output:
+<DocuBot output>
+```
+
+## Design Decisions
+
+- **Why a second LLM as validator instead of only prompt instructions in the drafter?**  
+  The drafter is optimized to be helpful and complete; splitting **generation** and **verification** reduces the chance that one prompt “talks itself into” an unsupported claim. The validator sees the **same** snippets and only judges alignment.
+
+- **Why JSON + confidence + pass/fail?**  
+  Structured output supports **logging**, **tests**, and future policy (e.g., different thresholds per environment). A scalar **confidence score** makes **guardrails** explicit rather than binary model prose alone.
+
+- **Why one retry, then a fixed refusal string?**  
+  A single retry balances **recovery** (transient wording issues) against **cost**, **latency**, and **risk** of repeated guessing. A **fixed** refusal string avoids the model inventing a new excuse and keeps UX predictable.
+
+- **Trade-offs**  
+  - **Pros:** Better grounding story, auditable logs (`logs/rag_interactions.jsonl`), safer default when evidence is weak or the draft is wrong.  
+  - **Cons:** **Higher API latency and cost** (up to two drafting calls and two validation calls on the retry path), and the validator itself is still a model (mitigated by snippet-bound prompts, JSON schema, and code-level confidence floors).
+
+Optional tuning: set **`RAG_VALIDATION_MIN_CONFIDENCE`** in the environment (default is defined in `llm_client.py`) to make acceptance stricter or looser.
+
+## Testing Summary
+
+The project includes a **`pytest`** suite under **`tests/test_rag_validation.py`** that exercises the RAG pipeline **without** calling Gemini:
+
+- **Mocks** replace the LLM client’s **`answer_from_snippets`**, **`answer_from_snippets_retry`**, and **`validate_rag_draft`** methods so **no API credits** are used.
+- **Golden path:** a grounded draft and a **passing** validator with **high confidence**; asserts the draft is returned and **no** retry runs.
+- **Hallucination path:** a draft containing **invented** content; mocked validator **fails** validation (simulating detection); retry still fails; asserts the canonical **`I do not know based on these docs.`** fallback and correct call counts.
+- **Empty context:** no retrieved snippets; asserts **no** draft or validation calls and the same safe refusal.
+
+Tests use a temporary `docs/` stub and a temporary JSONL logger path so runs stay hermetic.
+
+**Final test pass rate (paste after your last CI or local run):**  
+`[TODO: e.g., 3/3 tests passed (100%) — paste pytest summary line here]`
+
+To run the suite locally:
+
+```bash
+python -m pytest tests/test_rag_validation.py -v
+```

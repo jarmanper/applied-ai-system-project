@@ -19,6 +19,7 @@ venv/
 # Cache directories
 .cache/
 *.cache/
+.pytest_cache/
 
 # VS Code
 .vscode/
